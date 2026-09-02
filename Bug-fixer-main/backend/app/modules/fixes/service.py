@@ -1,0 +1,131 @@
+"""Mirrors: backend/src/modules/fixes/fix.service.ts"""
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.common.errors.app_error import AppError
+from app.models.bug import Bug
+from app.models.enums import AIStatus, BugStatus, FixStatus, Provider
+from app.models.fix import FixProposal
+from app.models.project import Project
+from app.modules.ai.service import diagnose_bug
+from app.modules.fixes.patch_service import (
+    apply_simple_replacement,
+    count_changed_lines,
+    read_workspace_file,
+    write_workspace_file,
+)
+from app.modules.fixes.validation_service import validate_workspace
+
+
+async def _assert_fix_access(db: AsyncSession, user_id: str, fix_id: str) -> FixProposal:
+    stmt = (
+        select(FixProposal)
+        .join(Project, FixProposal.projectId == Project.id)
+        .where(FixProposal.id == fix_id, Project.ownerId == user_id)
+        .options(selectinload(FixProposal.project).selectinload(Project.workspace))
+    )
+    fix = (await db.execute(stmt)).scalar_one_or_none()
+    if fix is None:
+        raise AppError(404, "FIX_NOT_FOUND", "Fix proposal was not found")
+    return fix
+
+
+async def generate_fix(db: AsyncSession, user_id: str, bug_id: str, provider: str | None, model: str | None) -> FixProposal:
+    stmt = select(Bug).join(Project, Bug.projectId == Project.id).where(
+        Bug.id == bug_id, Project.ownerId == user_id
+    )
+    bug = (await db.execute(stmt)).scalar_one_or_none()
+    if bug is None:
+        raise AppError(404, "BUG_NOT_FOUND", "Bug was not found")
+
+    diagnosis = await diagnose_bug(db, user_id, bug.projectId, bug.id, provider, model)
+
+    fix = FixProposal(
+        bugId=bug.id,
+        projectId=bug.projectId,
+        provider=Provider(diagnosis["provider"]),
+        model=diagnosis["model"],
+        confidence=diagnosis["confidence"],
+        explanation=diagnosis["explanation"],
+        patchSummary=diagnosis["patchSummary"],
+        unifiedDiff=diagnosis["unifiedDiff"],
+        originalCode=diagnosis.get("originalCode"),
+        proposedCode=diagnosis.get("proposedCode"),
+        affectedFiles=diagnosis["affectedFiles"],
+        linesChanged=count_changed_lines(diagnosis["unifiedDiff"]),
+        estimatedMinutes=diagnosis["estimatedMinutes"],
+    )
+    db.add(fix)
+    await db.commit()
+    await db.refresh(fix)
+    return fix
+
+
+async def list_fixes(db: AsyncSession, user_id: str) -> list[FixProposal]:
+    stmt = (
+        select(FixProposal)
+        .join(Project, FixProposal.projectId == Project.id)
+        .where(Project.ownerId == user_id)
+        .order_by(FixProposal.createdAt.desc())
+        .options(selectinload(FixProposal.bug), selectinload(FixProposal.validations))
+    )
+    return (await db.execute(stmt)).scalars().all()
+
+
+async def get_fix(db: AsyncSession, user_id: str, fix_id: str) -> FixProposal:
+    return await _assert_fix_access(db, user_id, fix_id)
+
+
+async def validate_fix(db: AsyncSession, user_id: str, fix_id: str, command: str) -> dict:
+    fix = await _assert_fix_access(db, user_id, fix_id)
+    if not fix.project.workspace or not fix.project.workspace.rootPath:
+        raise AppError(409, "WORKSPACE_NOT_READY", "Workspace is not initialized")
+    return await validate_workspace(db, fix.projectId, fix.id, fix.project.workspace.rootPath, command)
+
+
+async def apply_fix(db: AsyncSession, user_id: str, fix_id: str) -> dict:
+    fix = await _assert_fix_access(db, user_id, fix_id)
+    if not fix.project.workspace or not fix.project.workspace.rootPath:
+        raise AppError(409, "WORKSPACE_NOT_READY", "Workspace is not initialized")
+    if not fix.originalCode or not fix.proposedCode or len(fix.affectedFiles) != 1:
+        raise AppError(400, "PATCH_CONTEXT_REQUIRED", "This fix does not contain a single-file safe replacement context")
+
+    file = fix.affectedFiles[0]
+    current = await read_workspace_file(fix.project.workspace.rootPath, file)
+    updated = apply_simple_replacement(current, fix.originalCode, fix.proposedCode)
+    await write_workspace_file(fix.project.workspace.rootPath, file, updated)
+
+    from datetime import datetime, timezone
+
+    fix.status = FixStatus.Applied
+    fix.appliedAt = datetime.now(timezone.utc)
+
+    bug = (await db.execute(select(Bug).where(Bug.id == fix.bugId))).scalar_one()
+    bug.status = BugStatus.Fixed
+    bug.aiStatus = AIStatus.Applied
+
+    await db.commit()
+    return {"status": "Applied", "file": file}
+
+
+async def revert_fix(db: AsyncSession, user_id: str, fix_id: str) -> dict:
+    fix = await _assert_fix_access(db, user_id, fix_id)
+    if not fix.originalCode or not fix.proposedCode or len(fix.affectedFiles) != 1:
+        raise AppError(400, "REVERT_CONTEXT_REQUIRED", "This fix cannot be safely reverted from the stored context")
+    if not fix.project.workspace or not fix.project.workspace.rootPath:
+        raise AppError(409, "WORKSPACE_NOT_READY", "Workspace is not initialized")
+
+    file = fix.affectedFiles[0]
+    current = await read_workspace_file(fix.project.workspace.rootPath, file)
+    reverted = apply_simple_replacement(current, fix.proposedCode, fix.originalCode)
+    await write_workspace_file(fix.project.workspace.rootPath, file, reverted)
+
+    fix.status = FixStatus.Superseded
+
+    bug = (await db.execute(select(Bug).where(Bug.id == fix.bugId))).scalar_one()
+    bug.status = BugStatus.Open
+    bug.aiStatus = AIStatus.Pending
+
+    await db.commit()
+    return {"status": "Reverted", "file": file}
