@@ -5,7 +5,8 @@
     "ghcr.io/devcontainers/features/node:1": {
       "version": "20"
     },
-    "ghcr.io/devcontainers/features/docker-in-docker:2": { "moby": false } ,
+    "ghcr.io/devcontainers/features/docker-in-docker:2": { "moby": false }
+  },
   "forwardPorts": [3000, 4000, 5432, 6379],
   "portsAttributes": {
     "3000": { "label": "Frontend (Vite)", "visibility": "public", "onAutoForward": "notify" },
