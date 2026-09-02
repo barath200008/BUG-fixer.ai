@@ -101,6 +101,7 @@ def create_app() -> FastAPI:
     from app.modules.workspace.router import router as workspace_router
     from app.modules.bugs.router import router as bugs_router
     from app.modules.fixes.router import router as fixes_router
+    from app.modules.analysis.router import router as analysis_router
 
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(users_router, prefix="/api/v1")
@@ -109,10 +110,10 @@ def create_app() -> FastAPI:
     app.include_router(workspace_router, prefix="/api/v1")
     app.include_router(bugs_router, prefix="/api/v1")
     app.include_router(fixes_router, prefix="/api/v1")
+    app.include_router(analysis_router, prefix="/api/v1")
 
     # The following modules are converted in later phases and will be
     # mounted here the same way once ready:
-    #   /api/v1/analysis     -> analysis module      (Phase 3, in progress)
     #   /api/v1/context      -> context-docs module  (Phase 4)
     #   /api/v1/copilot      -> copilot module       (Phase 4)
     #   /api/v1/analytics    -> analytics module     (Phase 5)
