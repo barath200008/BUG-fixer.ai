@@ -12,7 +12,7 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 const API_PREFIX = '/api/v1';
 
 // TODO: replace with the token printed by `npm run seed:dev-user` (backend/prisma/seed-dev-user.ts)
-const DEV_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImIwZjUzZjQ5LTZiN2MtNGFmOS05Y2Q3LWIxNDYwMTI1MjhiYiIsImVtYWlsIjoiZGV2QGJ1Z2ZpeGVyLmxvY2FsIiwiZGlzcGxheU5hbWUiOiJEZXYgVXNlciIsInJvbGUiOiJVU0VSIiwiaWF0IjoxNzg4MTY0OTkzLCJleHAiOjE3OTA3NTY5OTN9.zGxxenhSm0sP4bbhBHk9jJ0BVG7Dkc5Qn9pfsL6C3LE';
+const DEV_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjVjZTA4MmU0LWNkN2EtNDEzMy05MjQxLTVmZWJlYzZiNDJlNSIsImVtYWlsIjoiZGV2QGV4YW1wbGUuY29tIiwiZGlzcGxheU5hbWUiOiJEZXYgVXNlciIsInJvbGUiOiJVU0VSIiwiaWF0IjoxNzg4MzQ0MDgyLCJleHAiOjE3OTA5MzYwODJ9.I8XeO86w22ORsBkoKHsdvljd6lAFe9NAWWhgq3jJ898';
 
 export function getAuthToken(): string {
   return DEV_TOKEN;
