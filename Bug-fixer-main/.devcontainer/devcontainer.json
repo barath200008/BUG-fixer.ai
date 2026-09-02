@@ -1,9 +1,18 @@
 {
-  "name": "Bug-fixer",
-  "image": "mcr.microsoft.com/devcontainers/universal:2",
-  "forwardPorts": [3000, 4000],
+  "name": "Bug-fixer-fastapi",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [3000, 4000, 5432, 6379],
   "portsAttributes": {
     "3000": { "label": "Frontend (Vite)", "visibility": "public", "onAutoForward": "notify" },
-    "4000": { "label": "Backend API", "visibility": "public", "onAutoForward": "notify" }
-  }
+    "4000": { "label": "Backend API (FastAPI)", "visibility": "public", "onAutoForward": "notify" },
+    "5432": { "label": "Postgres", "visibility": "private" },
+    "6379": { "label": "Redis", "visibility": "private" }
+  },
+  "postCreateCommand": "pip install -r backend/requirements.txt && cd frontend && npm install"
 }

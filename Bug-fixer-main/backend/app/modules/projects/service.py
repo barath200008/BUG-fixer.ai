@@ -1,0 +1,66 @@
+"""Mirrors: backend/src/modules/projects/project.service.ts + project.repository.ts"""
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.common.errors.app_error import AppError
+from app.models.project import Project
+from app.models.settings import ProjectSetting
+from app.models.context import Workspace
+from app.modules.projects.schemas import CreateProjectRequest
+
+
+async def list_projects(db: AsyncSession, owner_id: str, page: int, limit: int):
+    skip = (page - 1) * limit
+
+    items_stmt = (
+        select(Project)
+        .where(Project.ownerId == owner_id)
+        .options(selectinload(Project.workspace), selectinload(Project.setting))
+        .order_by(Project.updatedAt.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    count_stmt = select(func.count()).select_from(Project).where(Project.ownerId == owner_id)
+
+    items = (await db.execute(items_stmt)).scalars().all()
+    total = (await db.execute(count_stmt)).scalar_one()
+
+    return {"items": items, "page": page, "limit": limit, "total": total}
+
+
+async def get_project(db: AsyncSession, owner_id: str, project_id: str) -> Project:
+    stmt = (
+        select(Project)
+        .where(Project.id == project_id, Project.ownerId == owner_id)
+        .options(selectinload(Project.workspace), selectinload(Project.setting))
+    )
+    project = (await db.execute(stmt)).scalar_one_or_none()
+    if project is None:
+        raise AppError(404, "PROJECT_NOT_FOUND", "Project was not found")
+    return project
+
+
+async def create_project(db: AsyncSession, owner_id: str, payload: CreateProjectRequest) -> Project:
+    project = Project(
+        ownerId=owner_id,
+        name=payload.name,
+        sourceType=payload.sourceType,
+        repositoryUrl=str(payload.repositoryUrl) if payload.repositoryUrl else None,
+        defaultBranch=payload.defaultBranch,
+    )
+    db.add(project)
+    await db.flush()  # assigns project.id
+
+    db.add(ProjectSetting(projectId=project.id))
+    db.add(Workspace(projectId=project.id, rootPath=""))
+
+    await db.commit()
+
+    return await get_project(db, owner_id, project.id)
+
+
+async def delete_project(db: AsyncSession, owner_id: str, project_id: str) -> None:
+    project = await get_project(db, owner_id, project_id)
+    await db.delete(project)
+    await db.commit()
