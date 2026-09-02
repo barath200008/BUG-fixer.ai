@@ -1,9 +1,12 @@
 """Mirrors: backend/src/modules/projects/project.service.ts + project.repository.ts"""
+import os
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.common.errors.app_error import AppError
+from app.core.config import settings
 from app.models.project import Project
 from app.models.settings import ProjectSetting
 from app.models.context import Workspace
@@ -52,8 +55,16 @@ async def create_project(db: AsyncSession, owner_id: str, payload: CreateProject
     db.add(project)
     await db.flush()  # assigns project.id
 
+    # Each project gets its own real, isolated directory on disk to read/write
+    # files from. Previously this was left as "" (a placeholder), which made
+    # `os.scandir("")` fail inside workspace.tree() (silently returning an
+    # empty list) and made workspace.write_file() write relative to the
+    # server's current working directory instead of the project's sandbox.
+    root_path = os.path.abspath(os.path.join(settings.SANDBOX_WORK_ROOT, project.id))
+    os.makedirs(root_path, exist_ok=True)
+
     db.add(ProjectSetting(projectId=project.id))
-    db.add(Workspace(projectId=project.id, rootPath=""))
+    db.add(Workspace(projectId=project.id, rootPath=root_path))
 
     await db.commit()
 
