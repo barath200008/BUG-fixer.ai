@@ -43,7 +43,13 @@ async def set_phase(
             "type": event_type,
             "projectId": project_id,
             "analysisId": analysis_id,
-            "payload": {"id": phase.id, "number": phase.number, "status": phase.status},
+            "payload": {
+                "id": phase.id,
+                "number": phase.number,
+                "name": phase.name,
+                "status": phase.status,
+                "durationMs": phase.durationMs,
+            },
         },
     )
     return phase
@@ -76,7 +82,13 @@ async def add_log(
             "type": REALTIME_EVENTS["log_created"],
             "projectId": project_id,
             "analysisId": analysis_id,
-            "payload": {"id": log.id, "level": log.level, "category": log.category, "message": log.message},
+            "payload": {
+                "id": log.id,
+                "timestamp": log.timestamp.isoformat(),
+                "level": log.level,
+                "category": log.category,
+                "message": log.message,
+            },
         },
     )
     return log

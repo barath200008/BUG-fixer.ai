@@ -1,6 +1,7 @@
 """Mirrors: backend/src/modules/workspace/workspace.service.ts"""
 import asyncio
 import os
+import shutil
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,6 +86,51 @@ async def write_file(db: AsyncSession, user_id: str, workspace_id: str, file: st
     with open(target, "w", encoding="utf-8") as f:
         f.write(content)
     return {"path": file}
+
+
+async def delete_path(db: AsyncSession, user_id: str, workspace_id: str, path: str) -> dict:
+    ws = await workspace_for(db, user_id, workspace_id)
+    trimmed = path.strip().strip("/")
+    if not trimmed:
+        raise AppError(400, "INVALID_PATH", "Cannot delete the workspace root")
+    target = resolve_safe_path(ws.rootPath, trimmed)
+    if not os.path.exists(target):
+        raise AppError(404, "PATH_NOT_FOUND", "The requested path does not exist")
+    if os.path.isdir(target):
+        await asyncio.to_thread(shutil.rmtree, target)
+    else:
+        await asyncio.to_thread(os.remove, target)
+    return {"path": trimmed, "deleted": True}
+
+
+async def rename_path(db: AsyncSession, user_id: str, workspace_id: str, old_path: str, new_path: str) -> dict:
+    ws = await workspace_for(db, user_id, workspace_id)
+    old_trimmed = old_path.strip().strip("/")
+    new_trimmed = new_path.strip().strip("/")
+    if not old_trimmed or not new_trimmed:
+        raise AppError(400, "INVALID_PATH", "Both oldPath and newPath are required")
+    source = resolve_safe_path(ws.rootPath, old_trimmed)
+    dest = resolve_safe_path(ws.rootPath, new_trimmed)
+    if not os.path.exists(source):
+        raise AppError(404, "PATH_NOT_FOUND", "The item to rename does not exist")
+    if os.path.exists(dest):
+        raise AppError(409, "PATH_EXISTS", "A file or folder already exists at the destination")
+    dest_parent = os.path.dirname(dest) or ws.rootPath
+    os.makedirs(dest_parent, exist_ok=True)
+    await asyncio.to_thread(os.rename, source, dest)
+    return {"oldPath": old_trimmed, "newPath": new_trimmed}
+
+
+async def create_folder(db: AsyncSession, user_id: str, workspace_id: str, path: str) -> dict:
+    ws = await workspace_for(db, user_id, workspace_id)
+    trimmed = path.strip().strip("/")
+    if not trimmed:
+        raise AppError(400, "INVALID_PATH", "Folder path is required")
+    target = resolve_safe_path(ws.rootPath, trimmed)
+    if os.path.exists(target):
+        raise AppError(409, "PATH_EXISTS", "A file or folder already exists at this path")
+    await asyncio.to_thread(os.makedirs, target)
+    return {"path": trimmed}
 
 
 # --- Terminal: runs inside the Docker sandbox (Phase 5). Interim: not yet available. ---

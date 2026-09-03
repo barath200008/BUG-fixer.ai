@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.middleware.auth import AuthUser, require_auth
 from app.db.session import get_db
 from app.modules.workspace.schemas import (
+    CreateFolderRequest,
+    CreateFolderResponse,
+    DeleteResponse,
     ExecRequest,
     ExecResult,
     FileContent,
@@ -12,17 +15,22 @@ from app.modules.workspace.schemas import (
     GitCommitResponse,
     GitDiffResponse,
     GitStatusResult,
+    RenameRequest,
+    RenameResponse,
     SearchMatch,
     TreeNode,
     WriteFileRequest,
     WriteFileResponse,
 )
 from app.modules.workspace.service import (
+    create_folder,
+    delete_path,
     exec_command,
     git_commit,
     git_diff,
     git_status,
     read_file,
+    rename_path,
     search_workspace,
     tree,
     write_file,
@@ -60,6 +68,39 @@ async def put_file(
 ):
     result = await write_file(db, current_user.id, workspace_id, payload.path, payload.content)
     return WriteFileResponse(**result)
+
+
+@router.delete("/{workspace_id}/path", response_model=DeleteResponse)
+async def delete_workspace_path(
+    workspace_id: str,
+    path: str = Query(min_length=1),
+    current_user: AuthUser = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await delete_path(db, current_user.id, workspace_id, path)
+    return DeleteResponse(**result)
+
+
+@router.post("/{workspace_id}/rename", response_model=RenameResponse)
+async def post_rename(
+    workspace_id: str,
+    payload: RenameRequest,
+    current_user: AuthUser = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await rename_path(db, current_user.id, workspace_id, payload.oldPath, payload.newPath)
+    return RenameResponse(**result)
+
+
+@router.post("/{workspace_id}/folder", response_model=CreateFolderResponse)
+async def post_folder(
+    workspace_id: str,
+    payload: CreateFolderRequest,
+    current_user: AuthUser = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await create_folder(db, current_user.id, workspace_id, payload.path)
+    return CreateFolderResponse(**result)
 
 
 @router.post("/{workspace_id}/exec", response_model=ExecResult)

@@ -64,3 +64,26 @@ class GitCommitRequest(BaseModel):
 
 class GitCommitResponse(BaseModel):
     committed: bool
+
+
+class DeleteResponse(BaseModel):
+    path: str
+    deleted: bool
+
+
+class RenameRequest(BaseModel):
+    oldPath: str
+    newPath: str
+
+
+class RenameResponse(BaseModel):
+    oldPath: str
+    newPath: str
+
+
+class CreateFolderRequest(BaseModel):
+    path: str
+
+
+class CreateFolderResponse(BaseModel):
+    path: str
