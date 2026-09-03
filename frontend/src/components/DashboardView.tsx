@@ -99,6 +99,20 @@ export const DashboardView: React.FC = () => {
   const [recentRunsStats, setRecentRunsStats] = useState({ totalRuns: 0, fixed: 0, failed: 0 });
   const [recentRunsLoading, setRecentRunsLoading] = useState(true);
 
+  // --- Detected tech stack (real project.language / project.framework — nothing fabricated) ---
+  const [detectedStack, setDetectedStack] = useState<{ language: string | null; framework: string | null; status: string } | null>(null);
+
+  useEffect(() => {
+    if (!projectId) {
+      setDetectedStack(null);
+      return;
+    }
+    apiRequest<{ language: string | null; framework: string | null; status: string }>(`/projects/${projectId}`)
+      .then((p) => setDetectedStack({ language: p.language, framework: p.framework, status: p.status }))
+      .catch(() => setDetectedStack(null));
+    // Re-check once analysis stops running (phase 2 may have just written language/framework).
+  }, [projectId, isAnalyzing]);
+
   const refreshRecentRuns = React.useCallback(() => {
     apiRequest<RecentRunsResponse>('/analysis/recent')
       .then((res) => {
@@ -881,24 +895,26 @@ paths:
                     <Cpu className="w-4 h-4 text-indigo-400" />
                     <span>Detected Runtime Stack</span>
                   </h3>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
-                      <span className="text-gray-400">Language</span>
-                      <span className="font-semibold text-gray-200 font-mono">Python 3.11.6</span>
+                  {detectedStack ? (
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
+                        <span className="text-gray-400">Language</span>
+                        <span className="font-semibold text-gray-200 font-mono">{detectedStack.language ?? 'Not detected yet'}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
+                        <span className="text-gray-400">Framework</span>
+                        <span className="font-semibold text-gray-200 font-mono">{detectedStack.framework ?? 'Not detected yet'}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
+                        <span className="text-gray-400">Project Status</span>
+                        <span className="font-semibold text-gray-200 font-mono">{detectedStack.status}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
-                      <span className="text-gray-400">Framework</span>
-                      <span className="font-semibold text-gray-200 font-mono">FastAPI 0.104.1</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
-                      <span className="text-gray-400">Database</span>
-                      <span className="font-semibold text-gray-200 font-mono">PostgreSQL 15.4</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
-                      <span className="text-gray-400">Test Runner</span>
-                      <span className="font-semibold text-gray-200 font-mono">Pytest 7.4.3</span>
-                    </div>
-                  </div>
+                  ) : (
+                    <p className="text-[11px] text-gray-500 py-3">
+                      Run an analysis to detect the project's language and framework — nothing is shown here until the backend actually reports it.
+                    </p>
+                  )}
                 </div>
 
                 <div className="rounded-lg bg-[#0D1117] border border-[#30363D] p-5 space-y-3">
@@ -906,24 +922,9 @@ paths:
                     <Layers className="w-4 h-4 text-indigo-400" />
                     <span>Key Package Dependencies</span>
                   </h3>
-                  <div className="space-y-2 text-xs font-mono">
-                    <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
-                      <span className="text-gray-300">sqlalchemy</span>
-                      <span className="text-indigo-400 font-bold">2.0.23</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
-                      <span className="text-gray-300">alembic</span>
-                      <span className="text-indigo-400 font-bold">1.12.1</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
-                      <span className="text-gray-300">pydantic</span>
-                      <span className="text-indigo-400 font-bold">2.5.0</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 rounded bg-[#161B22] border border-[#30363D]">
-                      <span className="text-gray-300">redis</span>
-                      <span className="text-indigo-400 font-bold">5.0.1</span>
-                    </div>
-                  </div>
+                  <p className="text-[11px] text-gray-500 py-3">
+                    Dependency extraction isn't wired up on the backend yet (lands with the Install & Build phase). This panel will populate from real scan results once that's built — nothing fabricated here in the meantime.
+                  </p>
                 </div>
               </div>
 

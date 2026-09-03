@@ -1,6 +1,11 @@
 /**
  * Core fetch wrapper for talking to the BugFixer backend.
  *
+ * AUTO-DETECTS backend URL in Codespaces/localhost environments:
+ * - If VITE_API_BASE_URL is set, uses that (explicit config)
+ * - Otherwise, auto-detects by replacing frontend port with backend port (8000)
+ * This ensures the app works across Codespace environment restarts without manual config
+ *
  * AUTH (temporary, until a real login screen is built):
  * Run `npm run seed:dev-user` in /backend, copy the printed JWT below.
  * Every request automatically sends it as `Authorization: Bearer <token>`.
@@ -8,7 +13,37 @@
  * once the login screen exists — search this file for "DEV_TOKEN".
  */
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+/**
+ * Dynamically resolves the backend API base URL.
+ * Works across localhost, Codespaces, and any other environment.
+ */
+
+function resolveApiBaseUrl(): string {
+  // If explicitly configured via env, use that
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (envUrl && envUrl.trim()) {
+    return envUrl;
+  }
+
+  const protocol = window.location.protocol; // 'https:' or 'http:'
+  const hostname = window.location.hostname;
+  const BACKEND_PORT = 4000; // Backend actually runs on port 4000 (see backend/Dockerfile)
+
+  // Codespaces (and githubpreview.dev) forward each port via its own
+  // subdomain like "<name>-3000.app.github.dev" — NOT via "host:port".
+  // So swap the frontend port embedded in the hostname for the backend
+  // port, instead of appending ":PORT" (which doesn't resolve to anything).
+  const codespacePortMatch = hostname.match(/^(.*)-(\d+)(\.app\.github\.dev|\.githubpreview\.dev)$/);
+  if (codespacePortMatch) {
+    const [, prefix, , suffix] = codespacePortMatch;
+    return `${protocol}//${prefix}-${BACKEND_PORT}${suffix}`;
+  }
+
+  // Plain localhost/LAN dev: host:port works fine here.
+  return `${protocol}//${hostname}:${BACKEND_PORT}`;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 const API_PREFIX = '/api/v1';
 
 // TODO: replace with the token printed by `npm run seed:dev-user` (backend/prisma/seed-dev-user.ts)
