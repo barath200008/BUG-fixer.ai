@@ -51,8 +51,8 @@ class Settings(BaseSettings):
 
     DEFAULT_AI_PROVIDER: Literal[
         "openai", "anthropic", "google", "groq", "openrouter", "deepseek"
-    ] = "openai"
-    DEFAULT_AI_MODEL: str = "gpt-4o-mini"
+    ] = "groq"
+    DEFAULT_AI_MODEL: str = "openai/gpt-oss-120b"
 
     ENCRYPTION_KEY: str = Field(min_length=32)
     LOG_LEVEL: Literal[
