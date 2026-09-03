@@ -52,6 +52,37 @@ export async function saveWorkspaceFile(projectId: string, path: string, content
   });
 }
 
+/** Deletes a file or folder (recursively) at the given workspace-relative path. */
+export async function deleteWorkspacePath(projectId: string, path: string): Promise<{ path: string; deleted: boolean }> {
+  const workspaceId = await resolveWorkspaceId(projectId);
+  return apiRequest<{ path: string; deleted: boolean }>(
+    `/workspaces/${workspaceId}/path?path=${encodeURIComponent(path)}`,
+    { method: 'DELETE' }
+  );
+}
+
+/** Renames or moves a file/folder from oldPath to newPath (both workspace-relative). */
+export async function renameWorkspacePath(
+  projectId: string,
+  oldPath: string,
+  newPath: string
+): Promise<{ oldPath: string; newPath: string }> {
+  const workspaceId = await resolveWorkspaceId(projectId);
+  return apiRequest<{ oldPath: string; newPath: string }>(`/workspaces/${workspaceId}/rename`, {
+    method: 'POST',
+    body: { oldPath, newPath },
+  });
+}
+
+/** Creates a new, empty folder at the given workspace-relative path. */
+export async function createWorkspaceFolder(projectId: string, path: string): Promise<{ path: string }> {
+  const workspaceId = await resolveWorkspaceId(projectId);
+  return apiRequest<{ path: string }>(`/workspaces/${workspaceId}/folder`, {
+    method: 'POST',
+    body: { path },
+  });
+}
+
 export interface WorkspaceExecResult {
   stdout: string;
   stderr: string;

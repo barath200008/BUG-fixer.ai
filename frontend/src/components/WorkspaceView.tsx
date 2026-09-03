@@ -16,10 +16,13 @@ import {
   Loader2,
   Package,
   PanelBottom,
+  Pencil,
   RefreshCw,
   Save,
   Search,
   Sparkles,
+  Copy as CopyIcon,
+  Trash2,
   X,
 } from 'lucide-react';
 import Editor, { OnMount } from '@monaco-editor/react';
@@ -37,6 +40,9 @@ import {
   fetchWorkspaceGitDiff,
   commitWorkspaceChanges,
   WorkspaceGitStatus,
+  deleteWorkspacePath,
+  renameWorkspacePath,
+  createWorkspaceFolder,
 } from '../api/workspace';
 import { ApiError } from '../api/client';
 import { AgentPanel } from './Agentpanel';
@@ -153,10 +159,20 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // --- New file UI ---
+  // --- New file / new folder UI ---
   const [creatingPath, setCreatingPath] = useState<string | null>(null); // parent folder path, '' for root
+  const [creatingKind, setCreatingKind] = useState<'file' | 'folder'>('file');
   const [newFileName, setNewFileName] = useState('');
   const newFileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Right-click context menu (Explorer) ---
+  interface ContextMenuState { x: number; y: number; node: WorkspaceTreeNode | null } // node null = empty-space/root
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  // --- Rename UI ---
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   const activeFile = openFiles.find(f => f.path === activePath) ?? null;
 
@@ -335,6 +351,30 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     }
   }, [creatingPath]);
 
+  useEffect(() => {
+    if (renamingPath !== null) {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
+  }, [renamingPath]);
+
+  // Close the context menu on any outside click, scroll, or Escape.
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [contextMenu]);
+
   const toggleFolder = (path: string) => {
     setOpenFolders(prev => ({ ...prev, [path]: !prev[path] }));
   };
@@ -436,13 +476,18 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     });
   };
 
-  const startCreateFile = (parentPath: string) => {
+  const startCreateFile = (parentPath: string, kind: 'file' | 'folder' = 'file') => {
+    setCreatingKind(kind);
     setCreatingPath(parentPath);
     setNewFileName('');
+    setContextMenu(null);
   };
+
+  const startCreateFolder = (parentPath: string) => startCreateFile(parentPath, 'folder');
 
   const confirmCreateFile = async () => {
     if (!creatingPath && creatingPath !== '') return;
+    const kind = creatingKind;
     const trimmed = newFileName.trim();
     if (!trimmed) {
       setCreatingPath(null);
@@ -458,14 +503,103 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setSaving(true);
     setFileError(null);
     try {
-      await saveWorkspaceFile(projectId, fullPath, '');
-      setOpenFiles(prev => [...prev, { path: fullPath, content: '', savedContent: '' }]);
-      setActivePath(fullPath);
+      if (kind === 'folder') {
+        await createWorkspaceFolder(projectId, fullPath);
+        setOpenFolders(prev => ({ ...prev, [fullPath]: true }));
+      } else {
+        await saveWorkspaceFile(projectId, fullPath, '');
+        setOpenFiles(prev => [...prev, { path: fullPath, content: '', savedContent: '' }]);
+        setActivePath(fullPath);
+      }
       await loadTree();
     } catch (err) {
-      setFileError(err instanceof ApiError ? err.message : 'Failed to create file.');
+      setFileError(
+        err instanceof ApiError ? err.message : `Failed to create ${kind === 'folder' ? 'folder' : 'file'}.`
+      );
     } finally {
       setSaving(false);
+    }
+  };
+
+  // --- Rename (Explorer context menu) ---
+  const startRename = (node: WorkspaceTreeNode) => {
+    setRenamingPath(node.path);
+    setRenameValue(node.name);
+    setContextMenu(null);
+  };
+
+  const confirmRename = async (node: WorkspaceTreeNode) => {
+    const trimmed = renameValue.trim();
+    setRenamingPath(null);
+    if (!trimmed || trimmed === node.name) return;
+    if (!projectId) {
+      setFileError('No project selected yet.');
+      return;
+    }
+    const lastSlash = node.path.lastIndexOf('/');
+    const parent = lastSlash >= 0 ? node.path.slice(0, lastSlash) : '';
+    const newPath = parent ? `${parent}/${trimmed}` : trimmed;
+
+    setSaving(true);
+    setFileError(null);
+    try {
+      await renameWorkspacePath(projectId, node.path, newPath);
+      const remap = (p: string) => {
+        if (p === node.path) return newPath;
+        if (node.type === 'folder' && p.startsWith(`${node.path}/`)) return newPath + p.slice(node.path.length);
+        return p;
+      };
+      setOpenFiles(prev => prev.map(f => ({ ...f, path: remap(f.path) })));
+      setActivePath(prev => (prev ? remap(prev) : prev));
+      setOpenFolders(prev => {
+        const next: Record<string, boolean> = {};
+        for (const [p, v] of Object.entries(prev)) next[remap(p)] = v;
+        return next;
+      });
+      await loadTree();
+    } catch (err) {
+      setFileError(err instanceof ApiError ? err.message : 'Failed to rename.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // --- Delete (Explorer context menu) ---
+  const handleDeleteNode = async (node: WorkspaceTreeNode) => {
+    setContextMenu(null);
+    const ok = window.confirm(
+      `Delete ${node.type === 'folder' ? 'folder' : 'file'} "${node.name}"? This cannot be undone.`
+    );
+    if (!ok) return;
+    if (!projectId) {
+      setFileError('No project selected yet.');
+      return;
+    }
+    const isRemoved = (p: string) => (node.type === 'folder' ? p === node.path || p.startsWith(`${node.path}/`) : p === node.path);
+
+    setSaving(true);
+    setFileError(null);
+    try {
+      await deleteWorkspacePath(projectId, node.path);
+      setOpenFiles(prev => prev.filter(f => !isRemoved(f.path)));
+      setActivePath(prev => (prev && isRemoved(prev) ? null : prev));
+      await loadTree();
+    } catch (err) {
+      setFileError(err instanceof ApiError ? err.message : 'Failed to delete.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // --- Copy Path / Copy Relative Path (Explorer context menu) ---
+  const copyPathToClipboard = async (text: string, label: string) => {
+    setContextMenu(null);
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatusMessage(`${label} copied to clipboard`);
+      setTimeout(() => setStatusMessage(null), 2000);
+    } catch {
+      setFileError('Could not copy to clipboard.');
     }
   };
 
@@ -499,6 +633,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   const renderTree = (nodes: WorkspaceTreeNode[], depth = 0) => {
     return nodes.map(node => {
+      const isRenaming = renamingPath === node.path;
+
       if (node.type === 'folder') {
         const isOpen = openFolders[node.path] ?? depth === 0;
         return (
@@ -507,6 +643,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               className="flex items-center gap-1.5 px-2 py-1 hover:bg-[#2A2D2E] cursor-pointer group"
               style={{ paddingLeft: `${8 + depth * 14}px` }}
               onClick={() => toggleFolder(node.path)}
+              onContextMenu={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                setContextMenu({ x: e.clientX, y: e.clientY, node });
+              }}
             >
               {isOpen ? (
                 <ChevronDown className="w-3.5 h-3.5 text-[#858585] shrink-0" />
@@ -514,7 +655,22 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 <ChevronRight className="w-3.5 h-3.5 text-[#858585] shrink-0" />
               )}
               <Folder className="w-3.5 h-3.5 text-[#DCB67A] shrink-0" />
-              <span className="truncate">{node.name}</span>
+              {isRenaming ? (
+                <input
+                  ref={renameInputRef}
+                  value={renameValue}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => setRenameValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') void confirmRename(node);
+                    if (e.key === 'Escape') setRenamingPath(null);
+                  }}
+                  onBlur={() => void confirmRename(node)}
+                  className="flex-1 bg-[#3C3C3C] text-white text-xs px-1 py-0.5 rounded outline-none border border-[#007ACC]"
+                />
+              ) : (
+                <span className="truncate">{node.name}</span>
+              )}
               <button
                 onClick={e => {
                   e.stopPropagation();
@@ -526,6 +682,17 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               >
                 <FilePlus className="w-3 h-3" />
               </button>
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  setOpenFolders(prev => ({ ...prev, [node.path]: true }));
+                  startCreateFolder(node.path);
+                }}
+                className="opacity-0 group-hover:opacity-100 hover:text-white text-[#858585] p-0.5"
+                title="New folder in this folder"
+              >
+                <FolderPlus className="w-3 h-3" />
+              </button>
             </div>
             {isOpen && node.children && renderTree(node.children, depth + 1)}
             {isOpen && creatingPath === node.path && (
@@ -533,7 +700,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 className="flex items-center gap-1.5 px-2 py-1"
                 style={{ paddingLeft: `${8 + (depth + 1) * 14}px` }}
               >
-                <FileIcon className="w-3.5 h-3.5 text-[#9CDCFE] shrink-0" />
+                {creatingKind === 'folder' ? (
+                  <Folder className="w-3.5 h-3.5 text-[#DCB67A] shrink-0" />
+                ) : (
+                  <FileIcon className="w-3.5 h-3.5 text-[#9CDCFE] shrink-0" />
+                )}
                 <input
                   ref={newFileInputRef}
                   value={newFileName}
@@ -543,7 +714,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                     if (e.key === 'Escape') setCreatingPath(null);
                   }}
                   onBlur={() => void confirmCreateFile()}
-                  placeholder="filename.ext"
+                  placeholder={creatingKind === 'folder' ? 'folder name' : 'filename.ext'}
                   className="flex-1 bg-[#3C3C3C] text-white text-xs px-1 py-0.5 rounded outline-none border border-[#007ACC]"
                 />
               </div>
@@ -558,13 +729,33 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         <div
           key={node.path}
           onClick={() => void openFile(node.path)}
+          onContextMenu={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            setContextMenu({ x: e.clientX, y: e.clientY, node });
+          }}
           className={`flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer ${
             isActive ? 'bg-[#37373D] text-white' : 'hover:bg-[#2A2D2E]'
           }`}
           style={{ paddingLeft: `${8 + depth * 14 + 18}px` }}
         >
           <FileCode className={`w-3.5 h-3.5 shrink-0 ${fileIconColor(node.name)}`} />
-          <span className="truncate">{node.name}</span>
+          {isRenaming ? (
+            <input
+              ref={renameInputRef}
+              value={renameValue}
+              onClick={e => e.stopPropagation()}
+              onChange={e => setRenameValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') void confirmRename(node);
+                if (e.key === 'Escape') setRenamingPath(null);
+              }}
+              onBlur={() => void confirmRename(node)}
+              className="flex-1 bg-[#3C3C3C] text-white text-xs px-1 py-0.5 rounded outline-none border border-[#007ACC]"
+            />
+          ) : (
+            <span className="truncate">{node.name}</span>
+          )}
           {openFile_ && isDirty(openFile_) && (
             <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white shrink-0" />
           )}
@@ -660,6 +851,13 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 <FilePlus className="w-3.5 h-3.5" />
               </button>
               <button
+                onClick={() => startCreateFolder('')}
+                className="hover:text-white p-1"
+                title="New folder at workspace root"
+              >
+                <FolderPlus className="w-3.5 h-3.5" />
+              </button>
+              <button
                 onClick={() => void loadTree()}
                 className="hover:text-white p-1"
                 title="Refresh"
@@ -676,7 +874,13 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto py-1">
+          <div
+            className="flex-1 overflow-y-auto py-1"
+            onContextMenu={e => {
+              e.preventDefault();
+              setContextMenu({ x: e.clientX, y: e.clientY, node: null });
+            }}
+          >
             {treeLoading && tree.length === 0 && (
               <div className="flex items-center gap-2 px-3 py-3 text-[#858585]">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -714,7 +918,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
             {creatingPath === '' && (
               <div className="flex items-center gap-1.5 px-2 py-1">
-                <FileIcon className="w-3.5 h-3.5 text-[#9CDCFE] shrink-0" />
+                {creatingKind === 'folder' ? (
+                  <Folder className="w-3.5 h-3.5 text-[#DCB67A] shrink-0" />
+                ) : (
+                  <FileIcon className="w-3.5 h-3.5 text-[#9CDCFE] shrink-0" />
+                )}
                 <input
                   ref={newFileInputRef}
                   value={newFileName}
@@ -724,7 +932,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                     if (e.key === 'Escape') setCreatingPath(null);
                   }}
                   onBlur={() => void confirmCreateFile()}
-                  placeholder="filename.ext"
+                  placeholder={creatingKind === 'folder' ? 'folder name' : 'filename.ext'}
                   className="flex-1 bg-[#3C3C3C] text-white text-xs px-1 py-0.5 rounded outline-none border border-[#007ACC]"
                 />
               </div>
@@ -1275,6 +1483,97 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               })}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* EXPLORER RIGHT-CLICK CONTEXT MENU */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[190px] bg-[#252526] border border-[#454545] rounded shadow-2xl py-1 text-xs text-[#CCCCCC]"
+          style={{
+            top: Math.min(contextMenu.y, window.innerHeight - 260),
+            left: Math.min(contextMenu.x, window.innerWidth - 210),
+          }}
+          onClick={e => e.stopPropagation()}
+          onContextMenu={e => e.preventDefault()}
+        >
+          {contextMenu.node === null ? (
+            <>
+              <button
+                onClick={() => startCreateFile('')}
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#04395E] hover:text-white text-left"
+              >
+                <FilePlus className="w-3.5 h-3.5" />
+                New File
+              </button>
+              <button
+                onClick={() => startCreateFolder('')}
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#04395E] hover:text-white text-left"
+              >
+                <FolderPlus className="w-3.5 h-3.5" />
+                New Folder
+              </button>
+            </>
+          ) : (
+            <>
+              {contextMenu.node.type === 'folder' && (
+                <>
+                  <button
+                    onClick={() => {
+                      const p = contextMenu.node!.path;
+                      setOpenFolders(prev => ({ ...prev, [p]: true }));
+                      startCreateFile(p);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#04395E] hover:text-white text-left"
+                  >
+                    <FilePlus className="w-3.5 h-3.5" />
+                    New File
+                  </button>
+                  <button
+                    onClick={() => {
+                      const p = contextMenu.node!.path;
+                      setOpenFolders(prev => ({ ...prev, [p]: true }));
+                      startCreateFolder(p);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#04395E] hover:text-white text-left"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5" />
+                    New Folder
+                  </button>
+                  <div className="h-px bg-[#454545] my-1" />
+                </>
+              )}
+              <button
+                onClick={() => startRename(contextMenu.node!)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#04395E] hover:text-white text-left"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Rename...
+              </button>
+              <button
+                onClick={() => handleDeleteNode(contextMenu.node!)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#04395E] hover:text-white text-left"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete
+              </button>
+              <div className="h-px bg-[#454545] my-1" />
+              <button
+                onClick={() => copyPathToClipboard(`/${contextMenu.node!.path}`, 'Path')}
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#04395E] hover:text-white text-left"
+              >
+                <CopyIcon className="w-3.5 h-3.5" />
+                Copy Path
+              </button>
+              <button
+                onClick={() => copyPathToClipboard(contextMenu.node!.path, 'Relative path')}
+                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[#04395E] hover:text-white text-left"
+              >
+                <CopyIcon className="w-3.5 h-3.5" />
+                Copy Relative Path
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
