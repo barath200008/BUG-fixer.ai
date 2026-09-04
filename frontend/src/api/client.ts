@@ -27,7 +27,7 @@ function resolveApiBaseUrl(): string {
 
   const protocol = window.location.protocol; // 'https:' or 'http:'
   const hostname = window.location.hostname;
-  const BACKEND_PORT = 4000; // Backend actually runs on port 4000 (see backend/Dockerfile)
+  const BACKEND_PORT = 8000;
 
   // Codespaces (and githubpreview.dev) forward each port via its own
   // subdomain like "<name>-3000.app.github.dev" — NOT via "host:port".
