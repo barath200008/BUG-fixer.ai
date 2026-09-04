@@ -1,10 +1,8 @@
 """Mirrors: backend/src/modules/copilot/copilot.service.ts
 
-NOTE: conversation/message persistence below is real. Generating an actual
-AI reply is not — the AI providers module is still a stub (see
-app/modules/ai/service.py), so `send_message` responds with a clear,
-honest placeholder message instead of silently pretending to think.
-Swap `_generate_reply` for a real call once a provider is wired up.
+Conversation/message persistence, plus real AI replies via
+app.modules.ai.service.copilot_reply. When the model returns a proposal,
+it's persisted as a CodeChangeProposal linked to the AI's message.
 """
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.common.errors.app_error import AppError
 from app.models.copilot import CodeChangeProposal, CopilotConversation, CopilotMessage
 from app.models.enums import ProposalStatus
+from app.modules.ai.service import copilot_reply
 
 _MESSAGE_LOAD_OPTS = selectinload(CopilotConversation.messages).selectinload(CopilotMessage.proposal)
 
@@ -46,16 +45,6 @@ async def _conversation_for(db: AsyncSession, user_id: str, conversation_id: str
     return convo
 
 
-def _generate_reply(user_text: str) -> str:
-    # Placeholder until a real provider (OpenAI/Anthropic/etc.) is wired up
-    # for this module. Keeping this honest rather than faking a response.
-    return (
-        "I received your message, but AI chat isn't connected to a model provider yet "
-        "in this build — that part of the backend is still being ported. Once it's wired "
-        "up, I'll be able to actually respond to things like this."
-    )
-
-
 async def send_message(
     db: AsyncSession, user_id: str, conversation_id: str, text: str, provider: str | None, model: str | None
 ) -> CopilotMessage:
@@ -65,15 +54,47 @@ async def send_message(
     db.add(user_message)
     await db.flush()
 
-    reply_text = _generate_reply(text)
+    try:
+        reply = await copilot_reply(db, user_id, convo.projectId, text, provider, model)
+        reply_result = reply["result"] or {}
+        reply_text = str(reply_result.get("answer", "")) or "The model returned an empty answer."
+        used_provider, used_model = reply["provider"], reply["model"]
+    except Exception as exc:  # noqa: BLE001
+        # Keep the conversation usable even if the provider call fails
+        # (missing key, network error, bad JSON, etc.) rather than 500ing
+        # the whole endpoint and losing the user's message.
+        reply_text = f"I couldn't get a response from the AI provider: {exc}"
+        reply_result = {}
+        used_provider, used_model = provider, model
+
     ai_message = CopilotMessage(
         conversationId=convo.id,
         sender="ai",
         text=reply_text,
-        modelUsed=model,
-        provider=provider,
+        modelUsed=used_model,
+        provider=used_provider,
     )
     db.add(ai_message)
+    await db.flush()
+
+    proposal_data = reply_result.get("proposal") if isinstance(reply_result, dict) else None
+    if isinstance(proposal_data, dict):
+        db.add(
+            CodeChangeProposal(
+                conversationId=convo.id,
+                messageId=ai_message.id,
+                file=str(proposal_data.get("file", "")),
+                title=str(proposal_data.get("title", "")),
+                description=str(proposal_data.get("description", "")),
+                explanation=str(proposal_data.get("explanation", "")),
+                startLine=int(proposal_data.get("startLine", 0) or 0),
+                endLine=int(proposal_data.get("endLine", 0) or 0),
+                originalCode=str(proposal_data.get("originalCode", "")),
+                proposedCode=str(proposal_data.get("proposedCode", "")),
+                diffSummary=str(proposal_data.get("diffSummary", "")),
+            )
+        )
+
     await db.commit()
     await db.refresh(ai_message)
     return ai_message
