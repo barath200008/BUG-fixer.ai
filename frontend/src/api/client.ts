@@ -27,16 +27,13 @@ function resolveApiBaseUrl(): string {
 
   const protocol = window.location.protocol; // 'https:' or 'http:'
   const hostname = window.location.hostname;
-  const BACKEND_PORT = 8000;
+  const BACKEND_PORT = 4000;
 
-  // Codespaces (and githubpreview.dev) forward each port via its own
-  // subdomain like "<name>-3000.app.github.dev" — NOT via "host:port".
-  // So swap the frontend port embedded in the hostname for the backend
-  // port, instead of appending ":PORT" (which doesn't resolve to anything).
+  // Codespaces forwards the frontend through Vite, whose same-origin proxy
+  // routes API and websocket requests to the backend container.
   const codespacePortMatch = hostname.match(/^(.*)-(\d+)(\.app\.github\.dev|\.githubpreview\.dev)$/);
   if (codespacePortMatch) {
-    const [, prefix, , suffix] = codespacePortMatch;
-    return `${protocol}//${prefix}-${BACKEND_PORT}${suffix}`;
+    return '';
   }
 
   // Plain localhost/LAN dev: host:port works fine here.
@@ -47,7 +44,7 @@ export const API_BASE_URL = resolveApiBaseUrl();
 const API_PREFIX = '/api/v1';
 
 // TODO: replace with the token printed by `npm run seed:dev-user` (backend/prisma/seed-dev-user.ts)
-const DEV_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjVjZTA4MmU0LWNkN2EtNDEzMy05MjQxLTVmZWJlYzZiNDJlNSIsImVtYWlsIjoiZGV2QGV4YW1wbGUuY29tIiwiZGlzcGxheU5hbWUiOiJEZXYgVXNlciIsInJvbGUiOiJVU0VSIiwiaWF0IjoxNzg4MzQ0MDgyLCJleHAiOjE3OTA5MzYwODJ9.I8XeO86w22ORsBkoKHsdvljd6lAFe9NAWWhgq3jJ898';
+const DEV_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjBkODg5NmEzLThmZjItNGFjMC1iYTQ3LTkzMjBhZGIyZWRhNSIsImVtYWlsIjoiYmJhcmF0aHJhajE4QGdtYWlsLmNvbSIsImRpc3BsYXlOYW1lIjoiQmFyYXRoIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3ODg1MTk2NzMsImV4cCI6MTc5MTExMTY3M30.oQUMpM7Dn7fCdz-Hw3NgVAkDUnQY0lxC22e7eqxfLT0';
 
 export function getAuthToken(): string {
   return DEV_TOKEN;
