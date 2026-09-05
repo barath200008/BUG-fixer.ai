@@ -27,7 +27,7 @@ function resolveApiBaseUrl(): string {
 
   const protocol = window.location.protocol; // 'https:' or 'http:'
   const hostname = window.location.hostname;
-  const BACKEND_PORT = 4000;
+  const BACKEND_PORT = 8000;
 
   // Codespaces forwards the frontend through Vite, whose same-origin proxy
   // routes API and websocket requests to the backend container.
@@ -44,7 +44,8 @@ export const API_BASE_URL = resolveApiBaseUrl();
 const API_PREFIX = '/api/v1';
 
 // TODO: replace with the token printed by `npm run seed:dev-user` (backend/prisma/seed-dev-user.ts)
-const DEV_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjBkODg5NmEzLThmZjItNGFjMC1iYTQ3LTkzMjBhZGIyZWRhNSIsImVtYWlsIjoiYmJhcmF0aHJhajE4QGdtYWlsLmNvbSIsImRpc3BsYXlOYW1lIjoiQmFyYXRoIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3ODg1MTk2NzMsImV4cCI6MTc5MTExMTY3M30.oQUMpM7Dn7fCdz-Hw3NgVAkDUnQY0lxC22e7eqxfLT0';
+
+const DEV_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjFhZmJjNzY4LWU1N2YtNGNkNC1hYzJkLWZiNTE3M2E2Njg3OSIsImVtYWlsIjoiYmJhcmF0aHJhajE4QGdtYWlsLmNvbSIsImRpc3BsYXlOYW1lIjoiQmFyYXRoIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3ODg1MjQxMjEsImV4cCI6MTc5MTExNjEyMX0.c1ixh5ZwvOOO7f2i1f6LNOkwoKFyMZuCVisv6Loe1fs';
 
 export function getAuthToken(): string {
   return DEV_TOKEN;
