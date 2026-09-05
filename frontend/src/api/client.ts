@@ -3,7 +3,7 @@
  *
  * AUTO-DETECTS backend URL in Codespaces/localhost environments:
  * - If VITE_API_BASE_URL is set, uses that (explicit config)
- * - Otherwise, auto-detects by replacing frontend port with backend port (8000)
+ * - Otherwise, auto-detects by replacing frontend port with backend port (4000)
  * This ensures the app works across Codespace environment restarts without manual config
  *
  * AUTH (temporary, until a real login screen is built):
@@ -27,7 +27,7 @@ function resolveApiBaseUrl(): string {
 
   const protocol = window.location.protocol; // 'https:' or 'http:'
   const hostname = window.location.hostname;
-  const BACKEND_PORT = 8000;
+  const BACKEND_PORT = 4000;
 
   // Codespaces forwards the frontend through Vite, whose same-origin proxy
   // routes API and websocket requests to the backend container.
@@ -45,7 +45,7 @@ const API_PREFIX = '/api/v1';
 
 // TODO: replace with the token printed by `npm run seed:dev-user` (backend/prisma/seed-dev-user.ts)
 
-const DEV_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjFhZmJjNzY4LWU1N2YtNGNkNC1hYzJkLWZiNTE3M2E2Njg3OSIsImVtYWlsIjoiYmJhcmF0aHJhajE4QGdtYWlsLmNvbSIsImRpc3BsYXlOYW1lIjoiQmFyYXRoIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3ODg1MjQxMjEsImV4cCI6MTc5MTExNjEyMX0.c1ixh5ZwvOOO7f2i1f6LNOkwoKFyMZuCVisv6Loe1fs';
+const DEV_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjBlNWQxNmFhLWVkNzEtNDkyZS1hN2VhLWQ5NjM5M2FjNWNhYiIsImVtYWlsIjoiYnVnZml4ZXIubG9jYWxAZXhhbXBsZS5jb20iLCJkaXNwbGF5TmFtZSI6IkxvY2FsIERldmVsb3BlciIsInJvbGUiOiJVU0VSIiwiaWF0IjoxNzg4NjA3Nzc5LCJleHAiOjE3OTExOTk3Nzl9.ZOut_4XphvMRyNF2WL3fiO2KkwGxKxzbgCd-Fjdr0AI';
 
 export function getAuthToken(): string {
   return DEV_TOKEN;

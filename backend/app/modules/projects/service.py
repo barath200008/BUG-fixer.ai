@@ -11,7 +11,7 @@ from app.models.project import Project
 from app.models.settings import ProjectSetting
 from app.models.context import Workspace
 from app.modules.projects.schemas import CreateProjectRequest
-
+from app.models.enums import SourceType
 
 async def list_projects(db: AsyncSession, owner_id: str, page: int, limit: int):
     skip = (page - 1) * limit
@@ -48,7 +48,7 @@ async def create_project(db: AsyncSession, owner_id: str, payload: CreateProject
     project = Project(
         ownerId=owner_id,
         name=payload.name,
-        sourceType=payload.sourceType,
+       sourceType=SourceType(payload.sourceType),
         repositoryUrl=str(payload.repositoryUrl) if payload.repositoryUrl else None,
         defaultBranch=payload.defaultBranch,
     )

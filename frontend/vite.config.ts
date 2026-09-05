@@ -24,15 +24,15 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:4000',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:4000',
         changeOrigin: true,
       },
       '/realtime': {
-        target: 'ws://localhost:8000',
+        target: 'ws://localhost:4000',
         ws: true,
         changeOrigin: true,
       },
