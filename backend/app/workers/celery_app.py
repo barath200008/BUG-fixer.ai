@@ -1,12 +1,15 @@
 """
-Mirrors: backend/src/jobs/queue.ts (BullMQ -> Celery)
+Mirrors: backend/src/jobs/queue.ts + jobs/analysis.worker.ts (BullMQ -> Celery)
 
-STUB: Celery app is wired and importable so `celery -A app.workers.celery_app worker`
-runs without crashing, but the actual task implementations (analysis pipeline
-runner, sandbox execution, AI diagnosis, patch application, cleanup) land with
-the Sandbox/Engine phase. Right now `run_analysis_task` only marks the run as
-QUEUED in the DB; nothing actually executes the pipeline yet.
+run_analysis_task now actually executes the pipeline (see
+app/modules/analysis/pipeline_runner.py) instead of just logging a stub
+warning. Celery tasks are sync by design, so this wraps the async pipeline
+runner with asyncio.run() and opens its own DB session directly (Celery
+workers don't have access to FastAPI's request-scoped `get_db` dependency).
 """
+import asyncio
+
+import structlog
 from celery import Celery
 
 from app.core.config import settings
@@ -21,16 +24,30 @@ celery_app.conf.update(
     enable_utc=True,
 )
 
+logger = structlog.get_logger(__name__)
+
+
+async def _run(analysis_id: str, project_id: str) -> None:
+    # Imported inside the function so `celery -A app.workers.celery_app worker`
+    # doesn't need the full app import graph (models, gateway, etc.) just to
+    # start up and register tasks.
+    from app.common.websocket.realtime_gateway import RealtimeGateway
+    from app.db.session import AsyncSessionLocal
+    from app.modules.analysis.pipeline_runner import run_analysis_pipeline
+
+    gateway = RealtimeGateway()
+    async with AsyncSessionLocal() as db:
+        await run_analysis_pipeline(db, gateway, analysis_id, project_id)
+
 
 @celery_app.task(name="analysis.run")
 def run_analysis_task(analysis_id: str, project_id: str, owner_id: str) -> None:
-    # STUB: real pipeline execution (phases 1-8) is ported with the Sandbox/Engine phase.
-    import structlog
-
-    logger = structlog.get_logger(__name__)
-    logger.warning(
-        "run_analysis_task_stub_only",
-        analysis_id=analysis_id,
-        project_id=project_id,
-        note="Pipeline execution not yet implemented — job accepted but no-op.",
-    )
+    logger.info("run_analysis_task_started", analysis_id=analysis_id, project_id=project_id)
+    try:
+        asyncio.run(_run(analysis_id, project_id))
+        logger.info("run_analysis_task_completed", analysis_id=analysis_id)
+    except Exception as exc:  # noqa: BLE001
+        # The pipeline runner already marks the AnalysisRun/Project as FAILED
+        # with errorMessage before re-raising, so this is just for worker logs.
+        logger.error("run_analysis_task_failed", analysis_id=analysis_id, error=str(exc))
+        raise

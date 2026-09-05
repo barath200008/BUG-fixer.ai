@@ -96,8 +96,12 @@ async def send_message(
         )
 
     await db.commit()
-    await db.refresh(ai_message)
-    return ai_message
+    stmt = (
+        select(CopilotMessage)
+        .where(CopilotMessage.id == ai_message.id)
+        .options(selectinload(CopilotMessage.proposal))
+    )
+    return (await db.execute(stmt)).scalar_one()
 
 
 async def set_proposal_status(db: AsyncSession, user_id: str, proposal_id: str, status: str) -> CodeChangeProposal:
